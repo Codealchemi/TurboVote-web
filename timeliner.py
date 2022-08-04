@@ -1,59 +1,72 @@
-import os,datetime,toml
+import os,datetime,toml,json
 
+from jServ_api.jServ import jServ
 
 class TL:
-    def __init__(self, db_dir):
-        self.root = db_dir
-        if not os.path.exists(self.root):
-            os.mkdir(self.root)
+    def __init__(self, url, port, key):
+        self.db = jServ(url, port, key)
 
     def loc_exists(self, code):
-        if os.path.exists(self.root + os.sep + code + ".toml"):
-            return True
-        else:
+        resp = self.db.send_query("locations", code)
+        if resp['status'] == "error":
             return False
-
-    def mk_path(self, code):
-        return self.root + os.sep + code + ".toml"
+        else:
+            return True
 
     def get_obj(self, code):
-        with open(self.mk_path(code)) as f:
-            return toml.load(f)
+        return self.db.send_query("locations", code)
 
-    def save_obj(self, code, data):
-        with open(self.mk_path(code), 'w') as f:
-            f.write(toml.dumps(data))
+    def get_js_id(self):
+        res = self.db.send_query_newId("locations")
+        if res['status'] == 'ok':
+            return int(res['data']['value'])
 
-    def new_loc(self, code, long):
-        if not self.loc_exists(code):
-            with open(self.mk_path(code), "w") as f:
-                f.write("desc = '" + long + "'\n")
+    def new_loc(self, long):
+        nid = self.get_js_id()
+        obj = {
+            "id": nid,
+            "data": {
+                "desc": long,
+                "times": []
+            }
+        }
+        resp = self.db.send_add_object("locations", json.dumps(obj))
+        if resp['status'] == 'ok':
+            return "New location made with code: " + str(nid)
 
     def post_time(self, code, time):
         if self.loc_exists(code):
-            data = self.get_obj(code)
-            if not 'times' in data.keys():
-                data['times'] = {}
-            data['times'][str(datetime.datetime.now())] = time
-            self.save_obj(code, data)
+            obj = self.get_obj(code)
+            if obj['status'] == 'ok':
+                times = obj['data']['data']['times']
+                times.append(time)
+                times_obj = {"times": times}
+                print(str(json.dumps(times_obj)))
+                resp = self.db.send_mod_attribute("locations", code, "times", json.dumps(times_obj))
+                if resp['status'] == 'ok':
+                    return "Added new time of " + str(time) + " to object " + str(code)
+                else:
+                    return str(resp)
 
     def get_time(self, code):
         if self.loc_exists(code):
-            data = self.get_obj(code)
-            if 'times' in data.keys():
-                return list(data['times'].items())[-1]
+            obj = self.get_obj(code)
+            if obj['status'] == 'ok':
+                times = obj['data']['times']
+                return str(times[-1])
+            else:
+                return "n/a"
+
 
     def list_locations(self):
-        stuff = []
-        for elem in os.listdir(self.root):
-            stuff.append(elem.replace(".toml",""))
-        return stuff
+        res = self.db.send_query_allAttributes("locations", "desc")
+        print(str(res))
 
 
 
 
 if __name__ == "__main__":
-    db = TL("data")
-    db.new_loc("main", "Town square")
-    #db.post_time("main", input("Something funny: "))
-    print(db.get_time('main'))
+    db = TL("localhost", 4040, "7dd30892-a7a9-4343-bab0-1cdf6575a201")
+    db.new_loc("Town square")
+    db.post_time("main", input("Something funny: "))
+    db.list_locations()

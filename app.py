@@ -1,11 +1,11 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, redirect
 from flask_cors import CORS
 from envelopes import Envelope
 import toml, os, sys
 
 from timeliner import TL
 
-db = TL("data")
+db = TL("localhost", 4040, "7dd30892-a7a9-4343-bab0-1cdf6575a201")
 
 app = Flask(__name__)
 CORS(app)
@@ -33,13 +33,24 @@ def do_time(where):
 def location(where):
     if request.method == "GET":
         if db.loc_exists(where):
-            return str(db.get_obj(where))
+            obj = db.get_obj(where)
+            embed = "<h2>Location description: " + str(obj['data']['data']['desc']) + "</h2>"
+            embed += "<h3>Recorded times:</h3>"
+            times = obj['data']['data']['times']
+            if len(times) != 0:
+                for time in reversed(times):
+                    embed += "<p>- " + str(time) + "</p>"
+            else:
+                embed += "<p style='color:red;'>No recorded times.</p>"
+            embed += render_template("submit_time.html")
+            return render_template("page.html", page="Information for location " + str(where), raw=embed)
         else:
-            return "No location " + where
+            return render_template("page.html", page="Error", raw="<p>No location " + where + "</p>")
     else: # post inferred
         if db.loc_exists(where):
-            db.post_time(where, request.json['time'])
-            return "Done."
+            res = db.post_time(where, request.form['new_time'])
+            if "new time" in res:
+                return redirect("/location/" + where)
         else:
             if 'desc' in request.json.keys(): # we can make a new location
                 db.new_loc(where, request.json['desc'])
@@ -56,3 +67,7 @@ def location(where):
 @app.route("/list/locations")
 def get_codes():
     return str(db.list_locations())
+
+@app.route("/useragent")
+def get_ua():
+    return str(request.headers.get('User-Agent'))
